@@ -1,0 +1,22 @@
+```{r}
+
+library("sf")
+library("tmap")
+library("spdep")
+library("rstan")
+library("geostan")
+library("SpatialEpi")
+library("tidybayes")
+library("tidyverse")
+
+
+```
+```{r}
+
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+
+```
+
+
