@@ -317,7 +317,7 @@ st_crs(final_dataset)
 
 ```{r}
 
-tm_shape(ward_joined)+
+tm_shape(final_dataset)+
   tm_fill("total_2012_2022",
           style="jenks",
           n= 7, 
@@ -350,6 +350,131 @@ tm_shape(ward_joined)+
 
 
 ```
+
+
+
+#### 3.1. Spatial Autocorrelation (Global Moran's I) of Drug Offences in London
+
+```{r}
+#calculate the centroids
+centroids<- final_dataset%>%
+  st_centroid()%>%
+  st_geometry()
+#find four k-nearest neighbours
+knn <-centroids %>%
+  knearneigh(., k=4)
+knn2 <- knn%>%
+  knn2nb()
+#calculate the weights
+knn3_weight <- knn2 %>%
+  nb2listw(., style="W")
+#Global Moran's I on COVID-19 Death Rates
+moran.test(final_dataset$total_2012_2022, knn3_weight)
+```
+#### 3.2. Local Indıcators of Spatial Autocorrelation (LISA)
+
+```{r}
+#convert the dataset into sp
+
+final_dataset_sp <- as_Spatial(final_dataset)
+
+#LISA (Local Moran's I) 
+
+local_moran_density <- localmoran(final_dataset_sp$total_2012_2022, knn3_weight)
+
+
+final_dataset_sp$total_2012_2022_scale <- scale(final_dataset_sp$total_2012_2022)
+
+# create a spatial lag variable 
+final_dataset_sp$total_2012_2022_lag <- lag.listw(knn3_weight,final_dataset_sp$total_2012_2022)
+
+# convert the sp into sf again
+final_dataset_sf<- st_as_sf(final_dataset_sp)
+
+# set a significance value
+
+sig_level <- 0.1
+
+# classification with significance value
+
+final_dataset_sf$quad_sig <- ifelse(final_dataset_sf$total_2012_2022_scale > 0 & 
+                                          final_dataset_sf$total_2012_2022_lag > 0 & 
+                                          local_moran_density[,5] <= sig_level, 
+                                          'High-high (Hot spots)', 
+                                   ifelse(final_dataset_sf$total_2012_2022_scale <= 0 & 
+                                          final_dataset_sf$total_2012_2022_lag <= 0 & 
+                                          local_moran_density[,5] <= sig_level, 
+                                          'Low-Low (Cold Spots)', 
+                                   ifelse(final_dataset_sf$total_2012_2022_scale > 0 & 
+                                          final_dataset_sf$total_2012_2022_lag <= 0 & 
+                                          local_moran_density[,5] <= sig_level, 
+                                          'High-Low (Outliers)', 
+                                   ifelse(final_dataset_sf$total_2012_2022_scale <= 0 & 
+                                          final_dataset_sf$total_2012_2022_lag> 0 & 
+                                          local_moran_density[,5] <= sig_level, 
+                                          'Low-High (Outliers)',
+                                   ifelse(local_moran_density[,5] > sig_level, 
+                                          'Not-significant', 
+                                          'Not-significant')))))
+```
+
+Create a dataset including missing local authorities for mapping
+
+```{r}
+#convert the sf into data frame
+final_dataset_df<- as.data.frame(final_dataset_sf) %>%
+  
+  ##select necessary columns
+  
+    dplyr::select("quad_sig",
+                "WD22CD")
+#join 
+final_dataset_sf_lisa <- final_dataset %>%
+  left_join(.,
+            final_dataset_df, by = c("WD22CD" = "WD22CD"))
+```
+
+
+
+```{r}
+
+
+tm_shape(final_dataset_sf_lisa) +
+  
+  tm_fill(col = 'quad_sig', 
+            palette = c("#e34a33", "#bdd7e7", "white",  "#2c7fb8"),
+            title= "Clusters") +
+  
+    tm_shape(london_boroughs) +
+  tm_borders(col = "black", lwd=0.3) +
+
+  
+  ##north arrow
+  
+  tm_compass(north=0,
+             position=c(0.15,0.10),size=1.5, show.labels= 0)+
+  
+  ##scale bar
+  
+  tm_scale_bar(position = c(0.003,0.02)) +
+  
+  ##legend position
+  
+  tm_layout(legend.position = c(0.789,0.05),
+          legend.title.size = 0.76,
+          legend.text.size = 0.60) +
+  
+  ##title
+  
+   tm_credits("Statistically Significant Clusters (LISA)", position=c(0.20,0.94), size=0.8) 
+
+```
+
+
+
+
+
+
 
 
 
@@ -566,7 +691,7 @@ tm_shape(final_dataset) +
   
   ##legend position
   
-  tm_layout(legend.position = c(0.84,0.05),
+  tm_layout(legend.position = c(0.775,0.05),
           legend.title.size = 0.76,
           legend.text.size = 0.60) +
   
