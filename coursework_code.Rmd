@@ -1,4 +1,12 @@
+### GEOG0125
+### Advanced Topics in Social and Geographic Data Science
+
 # Risk Assessment for Drug Offences in London
+
+Note about codes used in this project
+
+The most of scripts used in this project are adapted from practical sessions of GEOG0125 Advanced Topics in Social and Geographic Data Science taught at UCL created by Anwar Musah, Stephen Law, Thomas Keel.
+
 
 ```{r}
 
@@ -23,13 +31,15 @@ library(readxl) #for impoorting excel files
 
 ```{r}
 
+#use multiple cores for parallel processing (important for Stan)
+
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 
 
 ```
 
-## 1. DATA IMPORTING
+## 1. Data Importing
 
 ### 1.1. Importing Crime Data from 2010 to 2021
 
@@ -40,7 +50,7 @@ rstan_options(auto_write = TRUE)
 ward_crime <- read.csv(here::here("Data/MPS Ward Level Crime (Historical).csv"))%>%
   
 
-      ##filter only Drug offences
+  ##filter only drug offences
   
   dplyr::filter(MajorText =="Drug Offences") %>%
   
@@ -69,7 +79,7 @@ ward_lastyear <- read.csv(here::here("Data/MPS Ward Level Crime (most recent 24 
   
   clean_names() 
 
-##we dont need data for 2023
+#we do not need data for year 2023 since the analysis will be conducted between 2012 and 2022.
 
 ward_lastyear <- ward_lastyear[, -c(27:29)]
 
@@ -78,9 +88,7 @@ ward_lastyear <- ward_lastyear[, -c(27:29)]
 
 ### 1.3. Importing Population Density (Census 2021) Data
 
-
 ```{r}
-
 
 # load in population density
 
@@ -89,7 +97,6 @@ pop_den <- read.csv(here::here("Data/Census Data/TS006-2021-3-filtered-2023-04-1
     rename("population_density" = "Observation")
 
 ```
-
 
 ### 1.4. Importing Migrant Indicator (Census 2021) Data
 
@@ -101,19 +108,17 @@ migrant <- read.csv(here::here("Data/Census Data/TS019-2021-2-filtered-2023-04-1
   
   clean_names() %>%
   
-  
-  #filter those who moved outside from the UK in the last year
+  ##filter those who moved outside from the UK in the last year
   
   dplyr::filter(migrant_indicator_5_categories_code ==3) %>%
   
-  #change the name of column
+  ##change the name of column
   
   rename("migrant_outside_number" = "observation")
 
 ```
 
 ### 1.5. Importing Qualification (Census 2021) Data
-
 
 ```{r}
 
@@ -148,8 +153,7 @@ london_boroughs <- read_sf(here::here("Data/statistical-gis-boundaries-london/ES
 
 ```
 
-
-## 2. DATA WRANGLING
+## 2. Data Wrangling
 
 ### 2.1. Wrangling the Historical Drug Offence Data
 
@@ -182,9 +186,7 @@ ward_crime <- ward_crime[, c("ward_name", "ward_code","minor_text","look_up_boro
 
 ```
 
-
 #### 2.1.2. Summing Drug Possession and Drug Trafficking into one discete number
-
 
 ```{r}
 
@@ -213,9 +215,7 @@ ward_lastyear<- ward_lastyear[, c("ward_name", "ward_code","minor_text","sum2021
 
 ```
 
-
 #### 2.2.1. Summing Drug Possession and Drug Trafficking into one discete number
-
 
 ```{r}
 
@@ -245,7 +245,6 @@ ward_joined <- london_wards %>%
 
 ```
 
-
 ```{r}
 
 #only selecting London wards
@@ -254,7 +253,6 @@ ward_joined <- ward_joined[complete.cases(ward_joined$summed_sexual_2012_2021),]
 
 
 ```
-
 
 ```{r}
 
@@ -270,15 +268,21 @@ ward_joined$total_2012_2022 <- ward_joined$summed_sexual_2012_2021 + ward_joined
 
 final_dataset <- ward_joined %>%
   
-
-  
+  ##join with population density
   left_join(., 
             pop_den, by=c("WD22CD"="Electoral.wards.and.divisions.Code")) %>%
   
+  ##join with migrant data
+  
     left_join(., 
             migrant, by=c("WD22CD"="electoral_wards_and_divisions_code")) %>%
+  
+  ##join with quantification data
+  
     left_join(., 
             qualification, by=c("WD22CD"="electoral_wards_and_divisions_code"))  %>%
+  
+  ##select only necessary columns for the analysis
   
    dplyr::select("WD22CD",
                 "WD22NM",
@@ -290,13 +294,19 @@ final_dataset <- ward_joined %>%
 
 ```
 
+### 2.4. Calculating the population for expected number used in the model
+
 ```{r}
+
+#calculate the area of the wards
 
 final_dataset$area <- st_area(final_dataset)
 
 ```
 
 ```{r}
+
+#calculte the population from multyipling population density and area 
 
 final_dataset$areas_km2 <- final_dataset$area / 1e+06
 
@@ -306,16 +316,29 @@ final_dataset$population <- as.numeric(final_dataset$population)
 
 ```
 
-## 3. Mapping the number of drug offence 
+#### 2.4.1 Calculating the expected number
+
+```{r}
+
+# calculate the expected number of cases
+final_dataset$ExpectedNum <- round(expected(population = final_dataset$population, cases = final_dataset$total_2012_2022, n.strata = 1), 0)
+
+```
+
+
+
+## 3. Mapping the number of drug offence
 
 ```{r}
 
 #look at the crs of our data
 
 st_crs(final_dataset)
+
 ```
 
 ```{r}
+#mapping the distribution of drug offences 
 
 tm_shape(final_dataset)+
   tm_fill("total_2012_2022",
@@ -323,6 +346,10 @@ tm_shape(final_dataset)+
           n= 7, 
           palette = "OrRd",
           title= "The Number of Offences")+
+  tm_borders(col = "grey", lwd=0.22) +
+  
+  ##london boroughs
+  
   tm_shape(london_boroughs) +
   tm_borders(col = "black", lwd=0.3) +
 
@@ -330,11 +357,11 @@ tm_shape(final_dataset)+
   ##north arrow
   
   tm_compass(north=0,
-             position=c(0.15,0.10),size=1.5, show.labels= 0)+
+             position=c(0.87,0.35),size=1.3, show.labels= 0)+
   
   ##scale bar
   
-  tm_scale_bar(position = c(0.003,0.02)) +
+  tm_scale_bar(position = c(0.003,0.0001),text.size =0.55) +
   
   ##legend position
   
@@ -344,36 +371,51 @@ tm_shape(final_dataset)+
   
   ##title
   
-   tm_credits("Drug Offences across London Wards (Natural Breaks)", position=c(0.20,0.94), size=0.8) 
+   tm_credits("a) Drug Offences across London Wards (Natural Breaks)", position=c(0.01,0.94), size=1.05, fontface = "bold") +
+   tm_credits("Source: Office for National Statistics licensed under the Open Government Licence v.1.0.", position=c(0.01,0.084), size=0.35)+
+  tm_credits("Contains National Statistics data © Crown copyright and database right [2022]",position=c(0.01,0.064), size=0.35)+
+  tm_credits("Contains Ordnance Survey data © Crown copyright and database right [2022]",position=c(0.01,0.044), size=0.35) 
 
-
-
+##save
+tmap_save()
 
 ```
 
-
-
 #### 3.1. Spatial Autocorrelation (Global Moran's I) of Drug Offences in London
 
+Note about codes used in this part
+
+The most of scripts used in this part are adapted from practical sessions of GEOG0114 Principles of Spatial Analysis in Social and Geographic Data Science taught at UCL created by Anwar Musah.
+
 ```{r}
+
 #calculate the centroids
+
 centroids<- final_dataset%>%
   st_centroid()%>%
   st_geometry()
+
 #find four k-nearest neighbours
+
 knn <-centroids %>%
   knearneigh(., k=4)
 knn2 <- knn%>%
   knn2nb()
+
 #calculate the weights
+
 knn3_weight <- knn2 %>%
   nb2listw(., style="W")
-#Global Moran's I on COVID-19 Death Rates
+
+#Global Moran's I on the number of drug offences in London Wards
+
 moran.test(final_dataset$total_2012_2022, knn3_weight)
 ```
+
 #### 3.2. Local Indıcators of Spatial Autocorrelation (LISA)
 
 ```{r}
+
 #convert the dataset into sp
 
 final_dataset_sp <- as_Spatial(final_dataset)
@@ -386,6 +428,7 @@ local_moran_density <- localmoran(final_dataset_sp$total_2012_2022, knn3_weight)
 final_dataset_sp$total_2012_2022_scale <- scale(final_dataset_sp$total_2012_2022)
 
 # create a spatial lag variable 
+
 final_dataset_sp$total_2012_2022_lag <- lag.listw(knn3_weight,final_dataset_sp$total_2012_2022)
 
 # convert the sp into sf again
@@ -418,10 +461,11 @@ final_dataset_sf$quad_sig <- ifelse(final_dataset_sf$total_2012_2022_scale > 0 &
                                           'Not-significant')))))
 ```
 
-Create a dataset including missing local authorities for mapping
 
 ```{r}
+
 #convert the sf into data frame
+
 final_dataset_df<- as.data.frame(final_dataset_sf) %>%
   
   ##select necessary columns
@@ -434,16 +478,18 @@ final_dataset_sf_lisa <- final_dataset %>%
             final_dataset_df, by = c("WD22CD" = "WD22CD"))
 ```
 
-
-
 ```{r}
 
+#mapping significant clusters
 
 tm_shape(final_dataset_sf_lisa) +
   
   tm_fill(col = 'quad_sig', 
             palette = c("#e34a33", "#bdd7e7", "white",  "#2c7fb8"),
             title= "Clusters") +
+  tm_borders(col = "grey", lwd=0.22) +
+  
+  ##london boroughs
   
     tm_shape(london_boroughs) +
   tm_borders(col = "black", lwd=0.3) +
@@ -452,11 +498,11 @@ tm_shape(final_dataset_sf_lisa) +
   ##north arrow
   
   tm_compass(north=0,
-             position=c(0.15,0.10),size=1.5, show.labels= 0)+
+             position=c(0.87,0.35),size=1.3, show.labels= 0)+
   
   ##scale bar
   
-  tm_scale_bar(position = c(0.003,0.02)) +
+  tm_scale_bar(position = c(0.003,0.0001),text.size =0.35) +
   
   ##legend position
   
@@ -466,31 +512,24 @@ tm_shape(final_dataset_sf_lisa) +
   
   ##title
   
-   tm_credits("Statistically Significant Clusters (LISA)", position=c(0.20,0.94), size=0.8) 
+   tm_credits("b) Statistically Significant Clusters of Drug Offences)", position=c(0.01,0.94), size=1.05, fontface = "bold") +
+   tm_credits("Source: Office for National Statistics licensed under the Open Government Licence v.1.0.", position=c(0.01,0.084), size=0.35)+
+  tm_credits("Contains National Statistics data © Crown copyright and database right [2022]",position=c(0.01,0.064), size=0.35)+
+  tm_credits("Contains Ordnance Survey data © Crown copyright and database right [2022]",position=c(0.01,0.044), size=0.35) 
+
+##save
+tmap_save()
+
 
 ```
+## 4. Spatial intrinsic conditional autoregressive model (ICAR)
 
-
-
-
-
-
-
-
+### 4.1. Creating Adjacency Matrix
 
 ```{r}
-
-# calculate the expected number of cases
-final_dataset$ExpectedNum <- round(expected(population = final_dataset$population, cases = final_dataset$total_2012_2022, n.strata = 1), 0)
-
-```
-
-3.  ADJACENCY MATRIX
-
-```{r}
-
 
 # need to be coerced into a spatial object
+
 sp.object <- as(final_dataset, "Spatial")
 
 ```
@@ -498,6 +537,7 @@ sp.object <- as(final_dataset, "Spatial")
 ```{r}
 
 # needs to be coerced into a matrix object
+
 adjacencyMatrix <- shape2mat(sp.object)
 
 # we extract the components for the ICAR model
@@ -507,6 +547,7 @@ extractComponents <- prep_icar_data(adjacencyMatrix)
 
 ```{r}
 
+#calculte nodes and edges
 
 n <- as.numeric(extractComponents$group_size)
 nod1 <- extractComponents$node1
@@ -515,20 +556,36 @@ n_edges <- as.numeric(extractComponents$n_edges)
 
 ```
 
-4.  Create dataset for STAN
+### 4.2. Identifying Dependent and Independent Variables
+
 
 ```{r}
+
+#drop geometry column to use as independent variables
+
 final1 <- st_drop_geometry(final_dataset)
 ```
 
 ```{r}
 
+#identifty dependent, independent variables and expected number
+
+##dependent variable
+
 y <- final_dataset$total_2012_2022
+
+##independent variables as a matrix
+
 x <- as.matrix(final1[, c("no_qualification_number","migrant_outside_number")])
+
+##expected number
 
 e <- final_dataset$ExpectedNum
 
 ```
+
+### 4.3. Model with Stan
+
 
 ```{r}
 
@@ -539,28 +596,39 @@ stan.spatial.dataset <- list(N=n, N_edges=n_edges, node1=nod1, node2=nod2, Y=y, 
 
 ```{r}
 
+#fit the model with stan code
+
 icar_poisson_fit = stan("coursework.stan", data=stan.spatial.dataset, iter=20000, chains=6, verbose = FALSE)
 
 ```
 
+### 4.4. Printing of the global results
+
 ```{r}
+
 # remove that annoying scientific notation
 options(scipen = 999)
 summary(icar_poisson_fit, pars=c("alpha", "beta", "sigma"), probs=c(0.025, 0.975))$summary
+
 ```
 
 ```{r}
 
-# show first 6 rows only instead of the full 307
+# show first 6 rows only
+
 head(summary(icar_poisson_fit, pars=c("phi"), probs=c(0.025, 0.975))$summary)
 
+
 ```
 
 ```{r}
+
+#print alpha, beta, sigma and phi
 
 print(icar_poisson_fit, pars=c("alpha", "beta", "sigma", "phi"), probs=c(0.025, 0.975))
 
 ```
+### 4.5. Rapid diagnostics of the rHATs
 
 ```{r}
 
@@ -573,16 +641,24 @@ table(diagnostic.checks$valid)
 
 ```
 
-```{r}
+All outputted parameters have an rHAT < 1.1
 
+
+### 4.6. Creating Area-specific Relative Risk Map
+
+```{r}
 
 # extraction key posterior results for the generated quantities 
 relativeRisk.results <- as.data.frame(summary(icar_poisson_fit, pars=c("mu"), probs=c(0.025, 0.975))$summary)
+
 # now cleaning up this table up
 # first, insert clean row numbers to new data frame
+
 row.names(relativeRisk.results) <- 1:nrow(relativeRisk.results)
+
 # second, rearrange the columns into order
 relativeRisk.results <- relativeRisk.results[, c(1,4,5,7)]
+
 # third, rename the columns appropriately
 colnames(relativeRisk.results)[1] <- "rr"
 colnames(relativeRisk.results)[2] <- "rrlower"
@@ -595,6 +671,7 @@ head(relativeRisk.results)
 ```
 
 ```{r}
+
 # now, we proceed to generate our risk maps
 # align the results to the areas in shapefile
 final_dataset$rr <- relativeRisk.results[, "rr"]
@@ -605,6 +682,7 @@ final_dataset$rrupper <- relativeRisk.results[, "rrupper"]
 ```
 
 ```{r}
+
 # create categories to define if an area has significant increase or decrease in risk, or nothing all 
 
 final_dataset$Significance <- NA
@@ -624,21 +702,14 @@ summary(final_dataset$rr)
 hist(final_dataset$rr)
 
 ```
+
 ```{r}
 
 # creating the labels
 RiskCategorylist <- c(">0.0 to 0.25", "0.26 to 0.50", "0.51 to 0.75", "0.76 to 0.99", "1.00 & <1.01",
     "1.01 to 1.10", "1.11 to 1.25", "1.26 to 1.50", "1.51 to 1.75", "1.76 to 2.00", "2.01 to 3.00")
 
-# next, we are creating the discrete colour changes for my legends and want to use a divergent colour scheme
-# scheme ranges from extreme dark blues to light blues to white to light reds to extreme dark reds
-# you can pick your own colour choices by checking out this link [https://colorbrewer2.org]
-
-RRPalette <- c("#65bafe","#98cffe","#cbe6fe","#dfeffe","white","#fed5d5","#fcbba1","#fc9272","#fb6a4a","#de2d26","#a50f15")
-
 ```
-
-
 
 ```{r}
 
@@ -661,48 +732,89 @@ table(final_dataset$RelativeRiskCat)
 ```
 
 ```{r}
-
+#mapping relative risks
 
 tm_shape(final_dataset)+
   tm_fill("RelativeRiskCat",
           style="cat",
-          palette = "OrRd",
-          title= "Rekative Risk")+
-
-
-```
-```{r}
-
-tm_shape(final_dataset) + 
-    tm_fill("Significance", style = "cat", title = "Significance Categories", 
-        palette = c("#33a6fe", "white", "#fe0000"), labels = c("Significantly low", "Not Significant", "Significantly high")) +
+          labels = RiskCategorylist,
+          palette = "-RdBu",
+          title= "Relative Risk")+
+    tm_borders(col = "white", lwd=0.087) +
   
-    tm_shape(london_boroughs) +
-  tm_borders(col = "black", lwd=0.3) +
+  ##london boroughs
+  tm_shape(london_boroughs) +
+  tm_borders(col = "black", lwd=1.2) +
 
   ##north arrow
   
   tm_compass(north=0,
-             position=c(0.15,0.10),size=1.5, show.labels= 0)+
+             position=c(0.10,0.20),size=1.3, show.labels= 0)+
   
   ##scale bar
   
-  tm_scale_bar(position = c(0.003,0.02)) +
+  tm_scale_bar(position = c(0.003,0.0001),text.size =0.35) +
   
   ##legend position
   
-  tm_layout(legend.position = c(0.775,0.05),
+  tm_layout(legend.position = c(0.825,0.01),
           legend.title.size = 0.76,
           legend.text.size = 0.60) +
   
+  
   ##title
   
-   tm_credits("Significance", position=c(0.20,0.94), size=0.8) 
+   tm_credits("a) Relative Risks", position=c(0.01,0.94), size=1.05, fontface = "bold") +
+  tm_credits("Contains National Statistics data © Crown copyright and database right [2022]",position=c(0.01,0.074), size=0.35)+
+  tm_credits("Contains Ordnance Survey data © Crown copyright and database right [2022]",position=c(0.01,0.054), size=0.35) 
+
+
+tmap_save()
+
 
 
 ```
+### 4.7. Creating Significance of Relative Risk Map
 
-Extracting and mapping of the exceedance probabilities
+```{r}
+#mapping the significance of relative risks
+
+tm_shape(final_dataset) + 
+    tm_fill("Significance", style = "cat", title = "Significance Categories", 
+        palette = c("#2c7fb8","white","#e34a33"), labels = c("Significantly low", "Not Significant", "Significantly high")) +
+    tm_borders(col = "white", lwd=0.070) +
+  
+  ##london boroughs
+  tm_shape(london_boroughs) +
+  tm_borders(col = "black", lwd=0.70) +
+  
+  ##north arrow
+  
+  tm_compass(north=0,
+             position=c(0.10,0.20),size=1.3, show.labels= 0)+
+  
+  ##scale bar
+  
+  tm_scale_bar(position = c(0.003,0.0001),text.size =0.35) +
+  
+  ##legend position
+  
+  tm_layout(legend.position = c(0.78,0.06),
+          legend.title.size = 0.76,
+          legend.text.size = 0.60) +
+  
+  
+  ##title
+  
+   tm_credits("a) Significance of Relative Risks", position=c(0.01,0.94), size=1.05, fontface = "bold") +
+  tm_credits("Contains National Statistics data © Crown copyright and database right [2022]",position=c(0.01,0.074), size=0.35)+
+  tm_credits("Contains Ordnance Survey data © Crown copyright and database right [2022]",position=c(0.01,0.054), size=0.35) 
+
+
+tmap_save()
+
+```
+### 4.8. Calculating and Mapping Exceedance Probabilities
 
 ```{r}
 
@@ -718,7 +830,6 @@ final_dataset$excProb <- excProbrr
 
 
 ```
-
 
 ```{r}
 
@@ -749,29 +860,35 @@ table(final_dataset$ProbCat)
 
 # map of exceedance probabilities
 tm_shape(final_dataset) + 
-    tm_fill("ProbCat", style = "cat", title = "Probability", palette = "GnBu", labels = ProbCategorylist) +
-  
+    tm_fill("ProbCat", style = "cat", title = "Probability", palette = "Reds", labels = ProbCategorylist) +
+    tm_borders(col = "#928B8B", lwd=0.195) +
+
+    ##london boroughs
      tm_shape(london_boroughs) +
-  tm_borders(col = "black", lwd=0.3) +
+     tm_borders(col = "black", lwd=0.5) +
+
 
   ##north arrow
   
   tm_compass(north=0,
-             position=c(0.15,0.10),size=1.5, show.labels= 0)+
+             position=c(0.10,0.20),size=1.3, show.labels= 0)+
   
   ##scale bar
   
-  tm_scale_bar(position = c(0.003,0.02)) +
-  
+  tm_scale_bar(position = c(0.003,0.0001),text.size =0.35) +
   ##legend position
   
   tm_layout(legend.position = c(0.84,0.05),
           legend.title.size = 0.76,
           legend.text.size = 0.60) +
   
+  
   ##title
   
-   tm_credits("Significance", position=c(0.20,0.94), size=0.8) 
+   tm_credits("Exceedance Probabilities", position=c(0.01,0.94), size=1.05, fontface = "bold") +
+  tm_credits("Contains National Statistics data © Crown copyright and database right [2022]",position=c(0.01,0.074), size=0.35)+
+  tm_credits("Contains Ordnance Survey data © Crown copyright and database right [2022]",position=c(0.01,0.054), size=0.35) 
 
+##save
+tmap_save()
 ```
-
