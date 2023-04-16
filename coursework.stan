@@ -8,9 +8,9 @@ data {
   int<lower=0> N_edges;
   array[N_edges] int<lower=1, upper=N> node1;
   array[N_edges] int<lower=1, upper=N> node2;
-  array[N] int<lower=0> Y;                                        // dependent variable i.e., number of road accidents
-  matrix[N, 2] X;                                                  // independent variables i.e., deprivation score and other predictors
-  vector<lower=0>[N] E;                                           // estimated number of expected cases of road accidents
+  array[N] int<lower=0> Y;                                        // dependent variable (drug offences)
+  matrix[N, 2] X;                                                  // independent variables (no educational qualifation and number of migrants)
+  vector<lower=0>[N] E;                                           // estimated number of expected cases of drug offence
 }
 transformed data {
   vector[N] log_offset = log(E);                                  // use the expected cases as an offset and add to the regression model
@@ -33,3 +33,5 @@ generated quantities {
   vector[N] eta = alpha + X * beta + phi * sigma;                  // do eta equals alpha + beta*X + phi*sigma to get the relative risk for areas 
   vector[N] mu = exp(eta);                                        // the exponentiate eta to mu areas-specific relative risk ratios (RRs)
 }
+
+
