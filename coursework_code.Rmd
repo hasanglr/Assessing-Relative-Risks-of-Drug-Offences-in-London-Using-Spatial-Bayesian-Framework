@@ -3,10 +3,6 @@
 
 # Risk Assessment for Drug Offences in London
 
-Note about codes used in this project
-
-The most of scripts used in this project are adapted from practical sessions of GEOG0125 Advanced Topics in Social and Geographic Data Science taught at UCL created by Anwar Musah, Stephen Law, Thomas Keel.
-
 
 ```{r}
 
