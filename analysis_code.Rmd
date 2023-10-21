@@ -1,8 +1,3 @@
-### GEOG0125
-### Advanced Topics in Social and Geographic Data Science
-
-# Risk Assessment for Drug Offences in London
-
 
 ```{r}
 
